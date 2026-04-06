@@ -57,6 +57,19 @@ defmodule ZaqWeb.Live.BO.Communication.HistoryLive do
      |> assign(:filter_channel_type, channel_type)}
   end
 
+  def handle_event("delete", %{"id" => id}, socket) do
+    case NodeRouter.call(:engine, Zaq.Engine.Conversations, :get_conversation!, [id]) do
+      %{} = conv ->
+        NodeRouter.call(:engine, Zaq.Engine.Conversations, :delete_conversation, [conv])
+        {:noreply, reload_conversations(socket)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  rescue
+    _ -> {:noreply, socket}
+  end
+
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
@@ -64,6 +77,16 @@ defmodule ZaqWeb.Live.BO.Communication.HistoryLive do
   defp load_conversations(opts) do
     result = NodeRouter.call(:engine, Zaq.Engine.Conversations, :list_conversations, [opts])
     if is_list(result), do: result, else: []
+  end
+
+  defp reload_conversations(socket) do
+    current_user = socket.assigns[:current_user]
+    user_id = if current_user, do: current_user.id, else: nil
+
+    conversations =
+      load_conversations(user_id: user_id)
+
+    assign(socket, :conversations, conversations)
   end
 
   defp super_admin?(%{role: %{name: "super_admin"}}), do: true

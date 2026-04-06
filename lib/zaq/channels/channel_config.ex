@@ -16,7 +16,7 @@ defmodule Zaq.Channels.ChannelConfig do
 
   @smtp_provider "email:smtp"
   @valid_kinds ~w(ingestion retrieval)
-  @valid_providers ~w(mattermost slack teams google_drive sharepoint email:smtp)
+  @valid_providers ~w(mattermost slack teams google_drive sharepoint zaq_local email:smtp)
 
   @test_message "✅ **Zaq Connection Test**\nThis is an automated test message. If you see this, the channel is configured correctly."
 
@@ -50,6 +50,7 @@ defmodule Zaq.Channels.ChannelConfig do
   defp maybe_require_connection_fields(changeset) do
     case get_field(changeset, :provider) do
       @smtp_provider -> validate_required(changeset, [:settings])
+      "zaq_local" -> changeset
       _provider -> validate_required(changeset, [:url, :token])
     end
   end

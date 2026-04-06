@@ -45,7 +45,7 @@ defmodule Zaq.Embedding.Client do
   def embed(text, opts \\ []) when is_binary(text) do
     cfg = Zaq.System.get_embedding_config()
     model = Keyword.get(opts, :model, cfg.model)
-    url = cfg.endpoint <> "/embeddings"
+    url = build_url(cfg.endpoint)
 
     headers =
       if cfg.api_key != nil and cfg.api_key != "" do
@@ -63,11 +63,19 @@ defmodule Zaq.Embedding.Client do
       [url: url, json: body, headers: headers, receive_timeout: 60_000]
       |> Keyword.merge(req_options())
 
+    Logger.info("Embedding request to #{url} with model #{model}, headers: #{inspect(headers)}")
+
     case Req.post(req_opts) do
       {:ok, %Req.Response{status: 200, body: %{"data" => [%{"embedding" => embedding} | _]}}} ->
+        Logger.info("Embedding request succeeded (OpenAI format)")
+        {:ok, embedding}
+
+      {:ok, %Req.Response{status: 200, body: %{"embeddings" => [embedding | _]}}} ->
+        Logger.info("Embedding request succeeded (Ollama format)")
         {:ok, embedding}
 
       {:ok, %Req.Response{status: 200, body: response_body}} ->
+        Logger.error("Embedding got 200 but unexpected response format: #{inspect(response_body)}")
         {:error, "Unexpected response format: #{inspect(response_body)}"}
 
       {:ok, %Req.Response{status: 429, headers: response_headers, body: response_body}} ->
@@ -187,6 +195,14 @@ defmodule Zaq.Embedding.Client do
   defp normalize_header_value([value | _]) when is_binary(value), do: value
   defp normalize_header_value(value) when is_binary(value), do: value
   defp normalize_header_value(_), do: nil
+
+  defp build_url(endpoint) do
+    cond do
+      String.ends_with?(endpoint, "/api/embed") -> endpoint
+      String.ends_with?(endpoint, "/api") -> endpoint <> "/embeddings"
+      true -> endpoint <> "/embeddings"
+    end
+  end
 
   defp req_options do
     :zaq

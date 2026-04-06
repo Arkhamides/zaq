@@ -741,6 +741,8 @@ defmodule Zaq.Ingestion.DocumentProcessor do
       embedding_vector = Pgvector.HalfVector.new(embedding)
       threshold = distance_threshold()
 
+      Logger.info("DocumentProcessor: similarity_search_group_by - query='#{query_text}', role_ids=#{inspect(role_ids)}, threshold=#{threshold}, vector_dims=#{length(embedding)}")
+
       results =
         Chunk
         |> join(:inner, [c], d in Document, on: c.document_id == d.id)
@@ -754,6 +756,19 @@ defmodule Zaq.Ingestion.DocumentProcessor do
         })
         |> Repo.all()
 
+      Logger.info("DocumentProcessor: similarity_search_group_by found #{length(results)} vector results")
+
+      # Fallback: if vector search found nothing, try matching by source path
+      results =
+        if Enum.empty?(results) do
+          Logger.info("DocumentProcessor: vector search empty, trying source path fallback for query='#{query_text}'")
+          source_path_fallback(query_text, role_ids)
+        else
+          results
+        end
+
+      Logger.info("DocumentProcessor: similarity_search_group_by final results: #{length(results)}")
+
       grouped =
         results
         |> Enum.group_by(& &1.document_id)
@@ -763,6 +778,27 @@ defmodule Zaq.Ingestion.DocumentProcessor do
 
       {:ok, grouped}
     end
+  end
+
+  defp source_path_fallback(query_text, role_ids) do
+    # Convert query words to lowercase for case-insensitive matching
+    query_words = query_text |> String.downcase() |> String.split(~r/\W+/)
+
+    # Find documents whose source path contains any of the query words
+    Chunk
+    |> join(:inner, [c], d in Document, on: c.document_id == d.id)
+    |> maybe_filter_roles(role_ids)
+    |> select([c, d], %{
+      document_id: c.document_id,
+      section_path: c.section_path,
+      vector_distance: 0.0,
+      source: d.source
+    })
+    |> Repo.all()
+    |> Enum.filter(fn result ->
+      source_lower = String.downcase(result.source)
+      Enum.any?(query_words, &String.contains?(source_lower, &1))
+    end)
   end
 
   defp fetch_sections_with_source([]), do: {:ok, []}
